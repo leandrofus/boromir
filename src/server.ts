@@ -395,7 +395,7 @@ function buildProxy(target: string, stripPrefix?: string) {
         // Capturar tokens de cookies del upstream
         const setCookies = proxyRes.headers['set-cookie'] || [];
         const cookieArr = Array.isArray(setCookies) ? setCookies : [setCookies];
-        const tokenCookieNames = ['token', 'access_token', 'accessToken', 'jwt', 'auth_token', 'authToken', 'id_token', 'nexus_session', 'session', 'sid'];
+        const tokenCookieNames = ['token', 'access_token', 'accessToken', 'jwt', 'auth_token', 'authToken', 'id_token', 'session', 'sid'];
         for (const cookieStr of cookieArr) {
           if (!cookieStr) continue;
           const [pair] = (cookieStr as string).split(';');
