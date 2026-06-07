@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Boromir — Web Interface</title>
+  <meta name="description" content="One does not simply walk into requests. Boromir — BRL playbook editor and runner." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Connect overlay -->
+  <div id="loginOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Connect to target">
+    <div class="overlay-card" id="loginCard">
+      <button id="closeConnectBtn" class="icon-btn connect-close" title="Close">✕</button>
+
+      <div class="connect-header">
+        <div class="gondor-logo-lg"></div>
+        <h2>Connect to Target</h2>
+        <p>One does not simply walk into requests.</p>
+      </div>
+
+      <div class="connect-form">
+        <label for="proxyBaseUrl">Application URL</label>
+        <input id="proxyBaseUrl" type="url" placeholder="https://api.example.com" />
+        <label for="proxyLoginPath">Login path <span class="hint-inline">(optional)</span></label>
+        <input id="proxyLoginPath" type="text" placeholder="/auth/login" value="" />
+        <p class="hint">Boromir opens the login page in a frame and captures the token automatically.</p>
+        <div id="loginError" class="error-msg hidden"></div>
+        <button id="openProxyBtn" class="btn-primary btn-full" style="margin-top:1.25rem;">
+          <span class="btn-text">Open Login Page</span>
+          <span class="spinner hidden"></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- iframe login -->
+    <div id="loginIframeWrapper" class="iframe-login-wrapper hidden">
+      <div class="iframe-toolbar">
+        <span class="iframe-status-dot" id="iframeStatusDot"></span>
+        <span id="iframeStatusText">Waiting for login…</span>
+        <button id="cancelIframeBtn" class="icon-btn" title="Cancel">✕</button>
+      </div>
+      <iframe id="loginIframe" class="login-iframe" title="Login Page" sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation"></iframe>
+    </div>
+  </div>
+
+  <!-- Swagger / OpenAPI overlay -->
+  <div id="swaggerOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Load Swagger / OpenAPI">
+    <div class="overlay-card" style="max-width: 600px; width: 95%;">
+      <div class="overlay-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.75rem;">
+        <h2 style="margin: 0; font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem;">
+          <span>📖</span> Load OpenAPI / Swagger Specification
+        </h2>
+        <button id="closeSwaggerModalBtn" class="icon-btn" style="font-size: 1.1rem; opacity: 0.7; cursor: pointer;">✕</button>
+      </div>
+      
+      <div class="tab-group" id="swaggerTabs" style="display: flex; gap: 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1.25rem;">
+        <button class="tab-btn active" data-tab="paste" style="background: none; border: none; padding: 0.5rem 0.25rem; font-weight: 500; cursor: pointer;">Paste JSON/YAML</button>
+        <button class="tab-btn" data-tab="url" style="background: none; border: none; padding: 0.5rem 0.25rem; font-weight: 500; cursor: pointer;">Fetch from URL</button>
+      </div>
+      
+      <div id="tabPaste" class="tab-panel">
+        <textarea id="swaggerPasteArea" placeholder="Paste Swagger JSON or OpenAPI YAML here..." rows="12" style="width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: var(--mono); padding: 0.75rem; margin-bottom: 1rem; resize: vertical; font-size: 0.85rem; line-height: 1.5; outline: none;"></textarea>
+      </div>
+      
+      <div id="tabUrl" class="tab-panel hidden">
+        <label for="swaggerUrlInput" style="display: block; margin-bottom: 0.5rem; font-size: 0.85rem; color: var(--text-muted);">Specification URL (JSON or YAML)</label>
+        <input id="swaggerUrlInput" type="url" placeholder="e.g. /v3/api-docs or http://localhost:8193/v3/api-docs" style="width: 100%; padding: 0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); margin-bottom: 1.25rem; outline: none;" />
+        <p class="hint" style="margin-top: -0.75rem; margin-bottom: 1.25rem; font-size: 0.8rem; color: var(--text-dim);">URLs starting with '/' will be requested through the proxy target.</p>
+      </div>
+
+      <div id="swaggerError" class="error-msg hidden" style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--red); color: var(--red); padding: 0.75rem; border-radius: var(--radius); font-size: 0.82rem; margin-bottom: 1.25rem;"></div>
+      
+      <div class="overlay-actions" style="display: flex; justify-content: flex-end; gap: 0.75rem; border-top: 1px solid var(--border); padding-top: 1rem;">
+        <button id="cancelSwaggerBtn" class="btn-secondary">Cancel</button>
+        <button id="submitSwaggerBtn" class="btn-primary">Load Spec</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Main app -->
+  <div id="app" class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="gondor-logo-sm"></div>
+        <span class="sidebar-title">Boromir</span>
+        <button id="sidebarToggle" class="icon-btn" title="Collapse sidebar">‹</button>
+      </div>
+
+      <nav class="sidebar-nav">
+        <button class="nav-item active" data-view="playbooks" id="navPlaybooks">
+          <span class="nav-icon">📄</span><span class="nav-label">Playbooks</span>
+        </button>
+        <button class="nav-item" data-view="curl" id="navCurl">
+          <span class="nav-icon">🔗</span><span class="nav-label">cURL Import</span>
+        </button>
+        <button class="nav-item" data-view="reports" id="navReports">
+          <span class="nav-icon">📊</span><span class="nav-label">Reports</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="user-badge" id="userBadge" title="Connect to target" style="cursor:pointer;">
+          <span class="user-avatar" id="authDot">○</span>
+          <span class="user-name" id="userName">not connected</span>
+        </div>
+        <button id="connectBtn" class="icon-btn" title="Connect to target">⇒</button>
+        <button id="logoutBtn" class="icon-btn danger" title="Disconnect">⏏</button>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main-content">
+
+      <!-- ── Playbooks view ── -->
+      <section id="viewPlaybooks" class="view active">
+        <header class="view-header">
+          <div>
+            <h2>Playbooks</h2>
+            <p class="view-subtitle">One does not simply walk into requests — but you can script them.</p>
+          </div>
+          <div class="header-actions">
+            <button id="newPlaybookBtn" class="btn-secondary">+ New</button>
+            <button id="refreshPlaybooksBtn" class="icon-btn" title="Refresh">↻</button>
+          </div>
+        </header>
+
+        <div class="playbook-layout">
+          <!-- File list -->
+          <div class="playbook-list-panel" id="playbookListPanel">
+            <div class="panel-search">
+              <input id="playbookSearch" type="search" placeholder="Filter playbooks…" />
+            </div>
+            <ul id="playbookList" class="file-list">
+              <li class="file-list-empty">One does not simply walk into requests without a playbook.</li>
+            </ul>
+          </div>
+
+          <!-- Editor + runner -->
+          <div class="playbook-editor-panel" id="editorPanel">
+            <div class="editor-toolbar">
+              <span id="editorFileName" class="editor-filename">Untitled.req</span>
+              <div class="editor-actions">
+                <input id="baseUrlInput" type="url" placeholder="Base URL (e.g. https://api.example.com)" class="base-url-input" />
+                <label class="toggle-label">
+                  <input type="checkbox" id="keepGoingToggle" />
+                  <span>Keep going</span>
+                </label>
+                <button id="openSwaggerModalBtn" class="btn-secondary btn-sm" title="Load OpenAPI Spec">📖 OpenAPI</button>
+                <button id="savePlaybookBtn" class="btn-secondary btn-sm">💾 Save</button>
+                <button id="runPlaybookBtn" class="btn-primary btn-sm">▶ Run</button>
+                <button id="deletePlaybookBtn" class="btn-danger btn-sm hidden">🗑 Delete</button>
+              </div>
+            </div>
+
+            <div class="editor-body">
+              <div id="playbookEditor" class="code-editor"></div>
+              <div class="editor-watermark" aria-hidden="true"></div>
+            </div>
+            <div class="editor-statusbar" id="editorStatusbar">
+              <span id="sbRunAll"></span>
+              <span id="sbRunLine"></span>
+              <span id="sbImportCurl"></span>
+              <span class="sb-sep">F1 — all commands</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Run results -->
+        <div id="runResults" class="run-results hidden">
+          <div class="results-header">
+            <h3>Execution Results</h3>
+            <div class="results-meta" id="resultsMeta"></div>
+            <button id="saveReportBtn" class="btn-secondary btn-sm" title="Save as HTML report">💾 Save Report</button>
+            <button id="maximizeResultsBtn" class="icon-btn" title="Maximize">⛶</button>
+            <button id="closeResults" class="icon-btn">✕</button>
+          </div>
+          <div id="resultsSteps" class="results-steps"></div>
+        </div>
+      </section>
+
+      <!-- ── cURL Import view ── -->
+      <section id="viewCurl" class="view hidden">
+        <header class="view-header">
+          <div>
+            <h2>cURL Import</h2>
+            <p class="view-subtitle">One does not simply copy-paste a cURL and call it a playbook. Let Boromir handle it.</p>
+          </div>
+        </header>
+
+        <div class="curl-layout">
+          <div class="curl-input-panel">
+            <label for="curlInput">Paste cURL command</label>
+            <textarea
+              id="curlInput"
+              class="code-editor"
+              rows="10"
+              placeholder="curl 'https://api.example.com/users' \&#10;  -H 'Authorization: Bearer eyJ...' \&#10;  -H 'Content-Type: application/json'"
+            ></textarea>
+            <div class="curl-actions">
+              <button id="parseCurlBtn" class="btn-primary">Parse</button>
+              <button id="importToPlaybookBtn" class="btn-secondary hidden">→ Open in Playbook</button>
+              <button id="setTokenFromCurlBtn" class="btn-secondary hidden">🔑 Use token from cURL</button>
+            </div>
+          </div>
+          <div class="curl-result-panel hidden" id="curlResultPanel">
+            <h3>Extracted Request</h3>
+            <div class="result-grid" id="curlResultGrid"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Reports view ── -->
+      <section id="viewReports" class="view hidden">
+        <header class="view-header">
+          <div>
+            <h2>Reports</h2>
+            <p class="view-subtitle">One does not simply run requests without a record of what happened.</p>
+          </div>
+          <button id="refreshReportsBtn" class="icon-btn" title="Refresh">↻</button>
+        </header>
+        <div id="reportsList" class="reports-grid">
+          <p class="empty-state">No reports found</p>
+        </div>
+        <iframe id="reportFrame" class="report-frame hidden" title="Report viewer"></iframe>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
