@@ -495,7 +495,7 @@ function updateConnectionBadge(baseUrl) {
     dot.textContent = '●';
     dot.style.color = 'var(--green)';
   } else {
-    $('userName').textContent = 'not connected';
+    $('userName').textContent = 'not yet';
     dot.textContent = '○';
     dot.style.color = '';
   }
@@ -594,7 +594,7 @@ function startAuthPoll() {
         closeIframeLogin();
         stopAuthPoll();
         updateConnectionBadge(data.baseUrl);
-        toast('Connected ✓', 'success');
+        toast('You shall pass ✓', 'success');
         loadPlaybooks();
         loadReports();
         loadSavedSpec();
@@ -625,7 +625,7 @@ $('closeConnectBtn').addEventListener('click', () => {
 $('logoutBtn').addEventListener('click', async () => {
   await api('POST', '/api/auth/logout');
   updateConnectionBadge(null);
-  toast('Disconnected', 'info');
+  toast('You shall not pass.', 'info');
 });
 
 
@@ -984,7 +984,7 @@ async function loadReports() {
   const reports = data.reports || [];
   const grid = $('reportsList');
   if (!reports.length) {
-    grid.innerHTML = '<p class="empty-state">No reports found.<br>Run a playbook with a report output to see them here.</p>';
+    grid.innerHTML = '<p class="empty-state">One does not simply run requests without a trace.<br>Save a report after your next run.</p>';
     return;
   }
   grid.innerHTML = reports.map(r => `

@@ -14,7 +14,7 @@ const program = new Command();
 
 program
   .name('boromir')
-  .description('BRL — Batch Request Language. Authenticate once, script your API.')
+  .description('One does not simply walk into requests.\n\nBRL — Batch Request Language. Authenticate once, script your API.')
   .version('1.0.0')
   .option('--base <url>',           'API base URL',                       'https://localhost:8080')
   .option('--cert <file>',          'Client cert PEM (mTLS)')

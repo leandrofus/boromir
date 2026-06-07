@@ -1,5 +1,7 @@
 # boromir
 
+> *One does not simply walk into requests.*
+
 **BRL — Batch Request Language** for REST APIs.
 
 Define API workflows as plain `.req` files. Chain responses between steps. Run end-to-end flows from a single command. Get rich HTML reports.

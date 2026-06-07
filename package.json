@@ -1,7 +1,7 @@
 {
-  "name": "boromir",
-  "version": "1.0.0",
-  "description": "BRL (Batch Request Language) — plain-text HTTP scripting with response chaining",
+  "name": "boromir-cli",
+  "version": "1.0.2",
+  "description": "One does not simply walk into requests. BRL — plain-text HTTP scripting with response chaining.",
   "bin": {
     "boromir": "dist/index.js"
   },
@@ -20,20 +20,28 @@
     "batch",
     "http",
     "requests",
-    "chaining"
+    "chaining",
+    "playbook",
+    "swagger",
+    "openapi"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/leandrofus/boromir.git"
+  },
+  "homepage": "https://github.com/leandrofus/boromir#readme",
+  "bugs": {
+    "url": "https://github.com/leandrofus/boromir/issues"
+  },
   "license": "MIT",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && rm -rf dist/web && cp -r src/web dist/web",
     "dev": "tsx src/index.ts",
     "dev:serve": "tsx src/index.ts serve",
     "serve": "npm run build && node dist/index.js serve",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@types/cookie-parser": "^1.4.10",
-    "@types/express": "^5.0.6",
-    "@types/express-session": "^1.19.0",
     "axios": "^1.7.0",
     "commander": "^12.0.0",
     "cookie-parser": "^1.4.7",
@@ -42,6 +50,9 @@
     "http-proxy-middleware": "^4.1.0"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/express": "^5.0.6",
+    "@types/express-session": "^1.19.0",
     "@types/node": "^20.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"
