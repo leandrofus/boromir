@@ -1,0 +1,24 @@
+# BRL — Batch Request Language example
+# ─────────────────────────────────────────────────────────────────
+# Format:  METHOD /path [JSON body]
+# Params:  inline  →  GET /api/items?status=active&page=1
+# Chain:   {{$N.field.subfield}}   response N (0-indexed, global across files)
+#          {{$prev.field}}         last response
+#          {{$N}}                  full response N as JSON
+#
+# Run:
+#   boromir --base https://api.example.com run example.req
+#   boromir --base https://api.example.com run example.req --report report.html
+# ─────────────────────────────────────────────────────────────────
+
+# step 0 — list items
+GET /api/items?status=active
+
+# step 1 — create a resource using the ID from step 0
+POST /api/orders {"itemId":"{{$0.items.0.id}}","qty":1}
+
+# step 2 — verify the resource using its ID from step 1
+GET /api/orders/{{$prev.id}}
+
+# step 3 — clean up
+DELETE /api/orders/{{$1.id}}

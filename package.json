@@ -1,0 +1,52 @@
+{
+  "name": "boromir",
+  "version": "1.0.0",
+  "description": "BRL (Batch Request Language) — plain-text HTTP scripting with response chaining",
+  "bin": {
+    "boromir": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "example.req",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "brl",
+    "api",
+    "rest",
+    "cli",
+    "batch",
+    "http",
+    "requests",
+    "chaining"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "dev:serve": "tsx src/index.ts serve",
+    "serve": "npm run build && node dist/index.js serve",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/express": "^5.0.6",
+    "@types/express-session": "^1.19.0",
+    "axios": "^1.7.0",
+    "commander": "^12.0.0",
+    "cookie-parser": "^1.4.7",
+    "express": "^4.18.2",
+    "express-session": "^1.18.0",
+    "http-proxy-middleware": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
